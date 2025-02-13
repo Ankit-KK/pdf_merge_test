@@ -5,3 +5,4 @@ python-pptx
 PyPDF2
 reportlab
 pillow
+spire.presentation
