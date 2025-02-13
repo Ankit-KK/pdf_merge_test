@@ -1,56 +1,42 @@
 import streamlit as st
-from msoffice2pdf import convert
-from pathlib import Path
-import tempfile
+import fitz  # PyMuPDF
+from pptx import Presentation
+from pptx.util import Inches
+from io import BytesIO
 
-def convert_pptx_to_pdf(input_path, output_path, use_libreoffice=False):
-    """
-    Converts a PowerPoint file to PDF.
+def merge_pdf_pages(pdf_files):
+    merged_pdf = fitz.open()
+    for pdf_file in pdf_files:
+        pdf_document = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        merged_pdf.insert_pdf(pdf_document, from_page=0, to_page=3)
+    output = BytesIO()
+    merged_pdf.save(output)
+    return output.getvalue()
 
-    Parameters:
-    - input_path: Path to the input PowerPoint file.
-    - output_path: Path where the output PDF will be saved.
-    - use_libreoffice: Boolean flag to use LibreOffice for conversion.
-                       Set to True if Microsoft Office is not available.
-    """
-    # 'soft' parameter: 0 for Microsoft Office, 1 for LibreOffice
-    soft = 1 if use_libreoffice else 0
-    convert(source=input_path, output_dir=output_path.parent, soft=soft)
+def merge_ppt_slides(ppt_files):
+    merged_presentation = Presentation()
+    for ppt_file in ppt_files:
+        presentation = Presentation(BytesIO(ppt_file.read()))
+        for slide in presentation.slides:
+            merged_presentation.slides.add_slide(slide.slide_layout)
+    output = BytesIO()
+    merged_presentation.save(output)
+    return output.getvalue()
 
-def main():
-    st.title("PowerPoint to PDF Converter")
+st.title("PDF and PPT Page Merger")
 
-    uploaded_file = st.file_uploader("Upload a PowerPoint file", type=["ppt", "pptx"])
-    if uploaded_file is not None:
-        # Save the uploaded file to a temporary directory
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as temp_input:
-            temp_input.write(uploaded_file.getbuffer())
-            input_path = Path(temp_input.name)
+uploaded_files = st.file_uploader("Upload PDF or PPT files", type=["pdf", "pptx"], accept_multiple_files=True)
 
-        output_path = input_path.with_suffix(".pdf")
+if uploaded_files:
+    pdf_files = [file for file in uploaded_files if file.name.endswith('.pdf')]
+    ppt_files = [file for file in uploaded_files if file.name.endswith('.pptx')]
 
-        # Convert the PowerPoint to PDF
-        try:
-            convert_pptx_to_pdf(input_path, output_path, use_libreoffice=True)
+    if pdf_files:
+        st.write("Merging PDF pages...")
+        merged_pdf = merge_pdf_pages(pdf_files)
+        st.download_button("Download Merged PDF", merged_pdf, "merged.pdf")
 
-            # Provide a download link for the converted PDF
-            with open(output_path, "rb") as f:
-                st.download_button(
-                    label="Download Converted PDF",
-                    data=f,
-                    file_name=output_path.name,
-                    mime="application/pdf"
-                )
-
-            st.success("Conversion successful! Click the button above to download the PDF.")
-
-        except Exception as e:
-            st.error(f"An error occurred during conversion: {e}")
-
-        finally:
-            # Clean up temporary files
-            input_path.unlink(missing_ok=True)
-            output_path.unlink(missing_ok=True)
-
-if __name__ == "__main__":
-    main()
+    if ppt_files:
+        st.write("Merging PPT slides...")
+        merged_ppt = merge_ppt_slides(ppt_files)
+        st.download_button("Download Merged PPT", merged_ppt, "merged.pptx")
