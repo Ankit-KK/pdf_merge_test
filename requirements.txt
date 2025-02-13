@@ -1,3 +1,4 @@
 Pillow
 PyMuPDF
 aspose.slides
+libgdiplus
