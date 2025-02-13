@@ -1,6 +1,4 @@
 Pillow
 PyMuPDF
-aspose.slides
-msoffice2pdf
 pymupdf
-pptx
+python-pptx
