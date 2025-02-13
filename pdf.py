@@ -1,50 +1,45 @@
 import streamlit as st
 from PyPDF2 import PdfReader, PdfWriter, PageObject
 from io import BytesIO
-from pptx import Presentation
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from PIL import Image
 import tempfile
 import os
+from spire.presentation import Presentation
+from spire.presentation.common import *
 
-# Helper function to convert PPT slides to images
-def ppt_to_images(file):
-    prs = Presentation(file)
+def ppt_to_images(file_path):
+    pres = Presentation()
+    pres.LoadFromFile(file_path)
     images = []
-    for i, slide in enumerate(prs.slides):
-        img_path = f"slide_{i}.png"
-        slide.save_as_image(img_path)
-        images.append(img_path)
+    for i, slide in enumerate(pres.Slides):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_img:
+            image = slide.SaveAsImage()
+            image.Save(tmp_img.name)
+            images.append(tmp_img.name)
+            image.Dispose()
+    pres.Dispose()
     return images
 
-# Helper function to convert images to PDF pages
 def images_to_pdf(images):
     pdf_buffer = BytesIO()
-    c = canvas.Canvas(pdf_buffer, pagesize=A4)
+    writer = PdfWriter()
+    
     for img_path in images:
-        img = Image.open(img_path)
-        img_width, img_height = img.size
-        c.setPageSize((img_width, img_height))
-        c.drawImage(img_path, 0, 0, width=img_width, height=img_height)
-        c.showPage()
-        img.close()
-        os.remove(img_path)  # Clean up temporary image files
-    c.save()
+        img = PdfReader(img_path)
+        writer.add_page(img.pages[0])
+        os.remove(img_path)  # Clean up temporary image
+    
+    writer.write(pdf_buffer)
     pdf_buffer.seek(0)
     return pdf_buffer
 
-# Helper function to merge 4 pages into one
 def merge_4_pages(pages):
     writer = PdfWriter()
     for i in range(0, len(pages), 4):
-        # Create a blank page (adjust dimensions as needed)
         merged_page = PageObject.create_blank_page(
-            width=pages[0].mediabox[2] * 2,  # Double width
-            height=pages[0].mediabox[3] * 2   # Double height
+            width=pages[0].mediabox[2] * 2,
+            height=pages[0].mediabox[3] * 2
         )
         
-        # Add pages in a 2x2 grid
         for j in range(4):
             if i + j >= len(pages):
                 break
@@ -56,52 +51,39 @@ def merge_4_pages(pages):
         writer.add_page(merged_page)
     return writer
 
-# Streamlit app
-st.title("Merge 4 Pages into One")
-st.write("Upload PDF or PPT files to merge 4 pages/slides into a single page.")
+# Streamlit UI
+st.title("PPT/PDF Merger (4 Pages/Slides per Sheet)")
+uploaded_files = st.file_uploader("Upload files", type=["pdf", "pptx"], accept_multiple_files=True)
 
-uploaded_files = st.file_uploader(
-    "Choose files", 
-    type=["pdf", "pptx"], 
-    accept_multiple_files=True
-)
-
-if st.button("Merge Files"):
-    if len(uploaded_files) == 0:
-        st.warning("Upload at least one file.")
+if st.button("Process Files"):
+    if not uploaded_files:
+        st.warning("Please upload files first!")
     else:
         all_pages = []
         
-        # Process uploaded files
         for file in uploaded_files:
-            if file.type == "application/pdf":
-                # Extract pages from PDF
-                pdf = PdfReader(file)
-                all_pages.extend(pdf.pages)
-            elif file.type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-                # Convert PPT to images and then to PDF
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp_file:
-                    tmp_file.write(file.read())
-                    tmp_file_path = tmp_file.name
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                tmp_file.write(file.read())
                 
-                images = ppt_to_images(tmp_file_path)
-                pdf_buffer = images_to_pdf(images)
-                pdf = PdfReader(pdf_buffer)
-                all_pages.extend(pdf.pages)
-                os.remove(tmp_file_path)  # Clean up temporary PPT file
+                if file.name.endswith(".pdf"):
+                    pdf = PdfReader(tmp_file.name)
+                    all_pages.extend(pdf.pages)
+                elif file.name.endswith(".pptx"):
+                    images = ppt_to_images(tmp_file.name)
+                    pdf_buffer = images_to_pdf(images)
+                    pdf = PdfReader(pdf_buffer)
+                    all_pages.extend(pdf.pages)
+                
+                os.remove(tmp_file.name)
         
-        # Merge pages into a 2x2 grid
         writer = merge_4_pages(all_pages)
-        
-        # Save merged PDF to BytesIO buffer
         merged_pdf = BytesIO()
         writer.write(merged_pdf)
         merged_pdf.seek(0)
         
-        # Download button for the merged PDF
         st.download_button(
-            label="Download Merged PDF",
-            data=merged_pdf,
-            file_name="merged_output.pdf",
-            mime="application/pdf"
+            "Download Merged PDF",
+            merged_pdf,
+            "merged_output.pdf",
+            "application/pdf"
         )
