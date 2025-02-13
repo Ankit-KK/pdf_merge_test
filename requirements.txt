@@ -2,3 +2,6 @@ Pillow
 PyMuPDF
 pymupdf
 python-pptx
+PyPDF2
+reportlab
+pillow
